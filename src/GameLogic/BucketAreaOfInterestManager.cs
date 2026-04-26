@@ -92,7 +92,7 @@ internal class BucketAreaOfInterestManager : IAreaOfInterestManager
     /// <inheritdoc/>
     public async ValueTask MoveObjectAsync(ILocateable obj, Point target, AsyncLock moveLock, MoveType moveType)
     {
-        var differentBucket = await this.MoveObjectOnMapAsync(obj, target, moveLock, moveType).ConfigureAwait(false);
+        var (differentBucket, effectiveTarget) = await this.MoveObjectOnMapAsync(obj, target, moveLock, moveType).ConfigureAwait(false);
 
         if (obj is IObservable observable)
         {
@@ -102,7 +102,7 @@ internal class BucketAreaOfInterestManager : IAreaOfInterestManager
         var observingPlayer = obj as IBucketMapObserver;
         if (differentBucket && observingPlayer != null)
         {
-            await this.UpdateObservingBucketsAsync(target, observingPlayer).ConfigureAwait(false);
+            await this.UpdateObservingBucketsAsync(effectiveTarget, observingPlayer).ConfigureAwait(false);
         }
     }
 
@@ -147,18 +147,20 @@ internal class BucketAreaOfInterestManager : IAreaOfInterestManager
         }
     }
 
-    private async ValueTask<bool> MoveObjectOnMapAsync(ILocateable obj, Point target, AsyncLock moveLock, MoveType moveType)
+    private async ValueTask<(bool DifferentBucket, Point EffectiveTarget)> MoveObjectOnMapAsync(ILocateable obj, Point target, AsyncLock moveLock, MoveType moveType)
     {
         if (moveType == MoveType.Walk)
         {
             if (obj is ISupportWalk supportWalk)
             {
-                target = supportWalk.WalkTarget;
+                target = obj is IBucketMapObserver ? obj.Position : supportWalk.WalkTarget;
             }
         }
 
-        var differentBucket = obj.Position.X / this.Map.BucketSideLength != target.X / this.Map.BucketSideLength
-                              || obj.Position.Y / this.Map.BucketSideLength != target.Y / this.Map.BucketSideLength;
+        var oldPosition = obj.Position;
+        var oldBucket = obj is IHasBucketInformation bucketInformation ? bucketInformation.NewBucket : this.Map[oldPosition];
+        var newBucket = this.Map[target];
+        var differentBucket = !ReferenceEquals(oldBucket, newBucket);
 
         if (!differentBucket)
         {
@@ -167,14 +169,11 @@ internal class BucketAreaOfInterestManager : IAreaOfInterestManager
                 obj.Position = target;
             }
 
-            return false;
+            return (false, target);
         }
 
         using (await moveLock.LockAsync())
         {
-            var oldPosition = obj.Position;
-            Bucket<ILocateable>? oldBucket;
-            Bucket<ILocateable> newBucket = this.Map[target];
             if (obj is IHasBucketInformation bucketInfo)
             {
                 oldBucket = bucketInfo.NewBucket;
@@ -200,6 +199,6 @@ internal class BucketAreaOfInterestManager : IAreaOfInterestManager
             await newBucket.AddAsync(obj).ConfigureAwait(false);
         }
 
-        return true;
+        return (true, target);
     }
 }
