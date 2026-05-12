@@ -110,7 +110,8 @@ public class ConfigurationChangeMediator : IConfigurationChangeMediator, IConfig
             (_, value) => value);
         registration.OnCreate += InvokeOnCreateAsync;
 
-        return registration;
+        return new Nito.Disposables.Disposable(() => registration.OnCreate -= InvokeOnCreateAsync);
+
         async ValueTask InvokeOnCreateAsync(TConfig config)
         {
             await onNewConfig(config, obj).ConfigureAwait(false);

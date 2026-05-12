@@ -18,11 +18,15 @@ using Nito.AsyncEx;
 /// <summary>
 /// The game map which contains instances of players, npcs, drops, and more.
 /// </summary>
-public class GameMap
+public class GameMap : AsyncDisposable
 {
     private readonly IDictionary<ushort, ILocateable> _objectsInMap = new ConcurrentDictionary<ushort, ILocateable>();
 
     private readonly IAreaOfInterestManager _areaOfInterestManager;
+
+    private readonly object _disposeLock = new();
+
+    private readonly IList<IDisposable> _disposeWithMap = new List<IDisposable>();
 
     private readonly IdGenerator _objectIdGenerator;
 
@@ -91,6 +95,40 @@ public class GameMap
     /// Gets the unique identifier of this map instance.
     /// </summary>
     public Guid Id { get; }
+
+    /// <summary>
+    /// Registers the specified disposable to be disposed together with this map.
+    /// </summary>
+    /// <param name="disposable">The disposable.</param>
+    internal void RegisterForDisposal(IDisposable disposable)
+    {
+        bool disposeImmediately;
+        lock (this._disposeLock)
+        {
+            disposeImmediately = this.IsDisposing || this.IsDisposed;
+            if (!disposeImmediately)
+            {
+                this._disposeWithMap.Add(disposable);
+            }
+        }
+
+        if (disposeImmediately)
+        {
+            disposable.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Removes the specified disposable from the map-owned disposables.
+    /// </summary>
+    /// <param name="disposable">The disposable.</param>
+    internal void UnregisterFromDisposal(IDisposable disposable)
+    {
+        lock (this._disposeLock)
+        {
+            this._disposeWithMap.Remove(disposable);
+        }
+    }
 
     /// <summary>
     /// Gets the object with the specified identifier.
@@ -271,6 +309,55 @@ public class GameMap
         foreach (var drop in drops)
         {
             await drop.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        this.ObjectAdded = null;
+        this.ObjectRemoved = null;
+        this.DisposeRegisteredResources();
+        await this.ClearNonPlayerObjectsAsync().ConfigureAwait(false);
+        await base.DisposeAsyncCore().ConfigureAwait(false);
+    }
+
+    private async ValueTask ClearNonPlayerObjectsAsync()
+    {
+        var objects = this._objectsInMap.Values
+            .Where(obj => obj is not Player)
+            .ToList();
+
+        foreach (var obj in objects)
+        {
+            switch (obj)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable disposable:
+                    await this.RemoveAsync(obj).ConfigureAwait(false);
+                    disposable.Dispose();
+                    break;
+                default:
+                    await this.RemoveAsync(obj).ConfigureAwait(false);
+                    break;
+            }
+        }
+    }
+
+    private void DisposeRegisteredResources()
+    {
+        IDisposable[] disposables;
+        lock (this._disposeLock)
+        {
+            disposables = this._disposeWithMap.ToArray();
+            this._disposeWithMap.Clear();
+        }
+
+        foreach (var disposable in disposables.Reverse())
+        {
+            disposable.Dispose();
         }
     }
 }

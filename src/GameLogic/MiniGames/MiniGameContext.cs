@@ -215,6 +215,7 @@ public class MiniGameContext : AsyncDisposable, IEventStateProvider
         {
             this.Logger.LogDebug("{context}: Disposing mini game...", this);
             await base.DisposeAsyncCore().ConfigureAwait(false);
+            await this._gameEndedCts.CancelAsync().ConfigureAwait(false);
 
             using (await this._enterLock.WriterLockAsync().ConfigureAwait(false))
             {
@@ -227,7 +228,7 @@ public class MiniGameContext : AsyncDisposable, IEventStateProvider
             this.Map.ObjectRemoved -= this.OnObjectRemovedFromMapAsync;
 
             await this._gameContext.RemoveMiniGameAsync(this).ConfigureAwait(false);
-            await this._gameEndedCts.CancelAsync().ConfigureAwait(false);
+            await this.Map.DisposeAsync().ConfigureAwait(false);
             this._gameEndedCts.Dispose();
         }
         catch (Exception ex)

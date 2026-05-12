@@ -301,10 +301,11 @@ public class GameContext : AsyncDisposable, IGameContext
     public async ValueTask RemoveMiniGameAsync(MiniGameContext miniGameContext)
     {
         using var l = await this._mapInitializerLock.LockAsync().ConfigureAwait(false);
-        MiniGameCounter.Add(-1);
-        miniGameContext.Dispose();
-        this._miniGames.Remove(miniGameContext.Key);
-        this.GameMapRemoved?.Invoke(this, miniGameContext.Map);
+        if (this._miniGames.Remove(miniGameContext.Key))
+        {
+            MiniGameCounter.Add(-1);
+            this.GameMapRemoved?.Invoke(this, miniGameContext.Map);
+        }
     }
 
     /// <summary>

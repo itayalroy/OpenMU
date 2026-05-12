@@ -102,20 +102,24 @@ public class MapInitializer : IMapInitializer
             this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
         }
 
-        this._configurationChangeMediator?.RegisterForNew<MonsterSpawnArea, GameMap>(createdMap, async (spawnArea, map) =>
+        if (this._configurationChangeMediator is { } changeMediator)
         {
-            if (!Equals(spawnArea.GameMap, map.Definition))
+            var registration = changeMediator.RegisterForNew<MonsterSpawnArea, GameMap>(createdMap, async (spawnArea, map) =>
             {
-                return;
-            }
+                if (!Equals(spawnArea.GameMap, map.Definition))
+                {
+                    return;
+                }
 
-            for (int i = 0; i < spawnArea.Quantity; i++)
-            {
-                await this.InitializeSpawnAsync(i, map, spawnArea).ConfigureAwait(false);
-            }
+                for (int i = 0; i < spawnArea.Quantity; i++)
+                {
+                    await this.InitializeSpawnAsync(i, map, spawnArea).ConfigureAwait(false);
+                }
 
-            this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
-        });
+                this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
+            });
+            createdMap.RegisterForDisposal(registration);
+        }
 
         this._logger.LogDebug("Finished creating monster instances for map {createdMap}", createdMap);
     }
@@ -270,15 +274,31 @@ public class MapInitializer : IMapInitializer
 
     private void RegisterForConfigChanges(GameMap createdMap, MonsterSpawnArea spawnArea, NonPlayerCharacter spawnedObject)
     {
-        this._configurationChangeMediator?.RegisterObject(
+        if (this._configurationChangeMediator is not { } changeMediator)
+        {
+            return;
+        }
+
+        var registrations = new List<IDisposable>();
+        IDisposable? mapRegistration = null;
+        void UnregisterAll()
+        {
+            if (mapRegistration is not null)
+            {
+                createdMap.UnregisterFromDisposal(mapRegistration);
+                mapRegistration.Dispose();
+            }
+        }
+
+        var spawnRegistration = changeMediator.RegisterObject(
             spawnArea,
             spawnedObject,
-            async (unregisterAction, area, o) =>
+            async (_, area, o) =>
             {
                 if (area.Quantity < o.SpawnIndex + 1)
                 {
                     await o.DisposeAsync().ConfigureAwait(false);
-                    unregisterAction();
+                    UnregisterAll();
                     this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
                     return;
                 }
@@ -288,12 +308,11 @@ public class MapInitializer : IMapInitializer
                 if (area.MonsterDefinition != o.Definition)
                 {
                     await o.DisposeAsync().ConfigureAwait(false);
-                    unregisterAction();
+                    UnregisterAll();
                     var newNpc = await this.InitializeSpawnAsync(o.SpawnIndex, createdMap, area).ConfigureAwait(false);
                     if (newNpc is not null)
                     {
                         this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
-                        this.RegisterForConfigChanges(createdMap, area, newNpc);
                     }
 
                     return;
@@ -317,12 +336,14 @@ public class MapInitializer : IMapInitializer
             async (_, o) =>
             {
                 await o.DisposeAsync().ConfigureAwait(false);
+                UnregisterAll();
                 this._spawnedMonsters.TryRemove(spawnArea, out var _);
             });
+        registrations.Add(spawnRegistration);
 
         if (spawnedObject.Definition.MerchantStore is { } merchantStore)
         {
-            this._configurationChangeMediator?.RegisterObject(merchantStore, spawnedObject, async (_, itemStorage, o) =>
+            var merchantRegistration = changeMediator.RegisterObject(merchantStore, spawnedObject, async (_, itemStorage, o) =>
             {
                 await o.ForEachObservingAsync<Player>(
                     async player =>
@@ -336,7 +357,19 @@ public class MapInitializer : IMapInitializer
                     },
                     false).ConfigureAwait(false);
             });
+            registrations.Add(merchantRegistration);
         }
+
+        mapRegistration = new Nito.Disposables.Disposable(() =>
+        {
+            foreach (var registration in registrations)
+            {
+                registration.Dispose();
+            }
+
+            registrations.Clear();
+        });
+        createdMap.RegisterForDisposal(mapRegistration);
     }
 
     private INpcIntelligence? TryCreateConfiguredNpcIntelligence(MonsterDefinition monsterDefinition, GameMap createdMap)
