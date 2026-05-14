@@ -18,7 +18,7 @@ using MUnique.OpenMU.PlugIns;
 [Guid("3E702A15-653A-48EF-899C-4CDB2239A90C")]
 public class WeatherUpdatePlugIn : IPeriodicTaskPlugIn, IObjectAddedToMapPlugIn
 {
-    private readonly IDictionary<GameMap, (byte, byte)> _weatherStates = new ConcurrentDictionary<GameMap, (byte, byte)>();
+    private readonly ConcurrentDictionary<Guid, (byte Weather, byte Variation)> _weatherStates = new();
 
     private DateTime _nextRunUtc = DateTime.UtcNow;
 
@@ -35,11 +35,21 @@ public class WeatherUpdatePlugIn : IPeriodicTaskPlugIn, IObjectAddedToMapPlugIn
         this._isRunning = true;
         try
         {
-            foreach (var map in await gameContext.GetMapsAsync().ConfigureAwait(false))
+            var maps = (await gameContext.GetMapsAsync().ConfigureAwait(false)).ToList();
+            var activeMapIds = maps.Select(map => map.Id).ToHashSet();
+            foreach (var map in maps)
             {
                 var weather = (byte)Rand.NextInt(0, 3);
                 var variation = (byte)Rand.NextInt(0, 10);
-                this._weatherStates[map] = (weather, variation);
+                this._weatherStates[map.Id] = (weather, variation);
+            }
+
+            foreach (var mapId in this._weatherStates.Keys)
+            {
+                if (!activeMapIds.Contains(mapId))
+                {
+                    this._weatherStates.TryRemove(mapId, out _);
+                }
             }
 
             await gameContext.ForEachPlayerAsync(this.TrySendPlayerUpdateAsync).ConfigureAwait(false);
@@ -83,11 +93,11 @@ public class WeatherUpdatePlugIn : IPeriodicTaskPlugIn, IObjectAddedToMapPlugIn
     {
         if (player.CurrentMap is { } map
             && !player.PlayerState.CurrentState.IsDisconnectedOrFinished()
-            && this._weatherStates.TryGetValue(map, out var weather))
+            && this._weatherStates.TryGetValue(map.Id, out var weather))
         {
             try
             {
-                await player.InvokeViewPlugInAsync<IWeatherStatusUpdatePlugIn>(p => p.ShowWeatherAsync(weather.Item1, weather.Item2)).ConfigureAwait(false);
+                await player.InvokeViewPlugInAsync<IWeatherStatusUpdatePlugIn>(p => p.ShowWeatherAsync(weather.Weather, weather.Variation)).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
