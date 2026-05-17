@@ -402,4 +402,19 @@ public enum UpdateVersion
     /// The version of the <see cref="FinishDarkLordMasterTreePlugIn"/>.
     /// </summary>
     FinishDarkLordMasterTree = 79,
+
+    /// <summary>
+    /// The version of the <see cref="AddMovementSpeedAttributesPlugIn075"/>.
+    /// </summary>
+    AddMovementSpeedAttributes075 = 80,
+
+    /// <summary>
+    /// The version of the <see cref="AddMovementSpeedAttributesPlugIn095d"/>.
+    /// </summary>
+    AddMovementSpeedAttributes095d = 81,
+
+    /// <summary>
+    /// The version of the <see cref="AddMovementSpeedAttributesPlugInSeason6"/>.
+    /// </summary>
+    AddMovementSpeedAttributesSeason6 = 82,
 }

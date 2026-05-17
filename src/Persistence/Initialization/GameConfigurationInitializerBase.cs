@@ -238,6 +238,7 @@ public abstract class GameConfigurationInitializerBase : InitializerBase
     {
         var moneyAmountRate = this.Context.CreateNew<ConstValueAttribute>(1f, Stats.MoneyAmountRate.GetPersistent(this.GameConfiguration));
         this.GameConfiguration.GlobalBaseAttributeValues.Add(moneyAmountRate);
+        this.GameConfiguration.GlobalBaseAttributeValues.Add(this.Context.CreateNew<ConstValueAttribute>(1f, Stats.MovementSpeedFactor.GetPersistent(this.GameConfiguration)));
     }
 
     private long CalcNeededMasterExp(long lvl)
