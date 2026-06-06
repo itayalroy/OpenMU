@@ -223,11 +223,11 @@ public class MiniGameContext : AsyncDisposable, IEventStateProvider
 
             await this.MovePlayersToSafezoneAsync().ConfigureAwait(false);
 
-            this.Map.ObjectAdded -= this.OnObjectAddedToMapAsync;
-            this.Map.ObjectRemoved -= this.OnObjectRemovedFromMapAsync;
-
             await this._gameContext.RemoveMiniGameAsync(this).ConfigureAwait(false);
             await this._gameEndedCts.CancelAsync().ConfigureAwait(false);
+            await this.Map.DisposeAsync().ConfigureAwait(false);
+            this.Map.ObjectAdded -= this.OnObjectAddedToMapAsync;
+            this.Map.ObjectRemoved -= this.OnObjectRemovedFromMapAsync;
             this._gameEndedCts.Dispose();
         }
         catch (Exception ex)

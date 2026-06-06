@@ -13,6 +13,8 @@ using Nito.AsyncEx;
 /// </summary>
 public class NonPlayerCharacter : AsyncDisposable, IObservable, IRotatable, ILocateable, IHasBucketInformation
 {
+    private readonly List<IDisposable> _registrations = new();
+
     /// <summary>
     /// Initializes a new instance of the <see cref="NonPlayerCharacter"/> class.
     /// </summary>
@@ -129,6 +131,15 @@ public class NonPlayerCharacter : AsyncDisposable, IObservable, IRotatable, ILoc
         this.OnObserverRemoved();
     }
 
+    /// <summary>
+    /// Registers a disposable to be disposed together with this instance.
+    /// </summary>
+    /// <param name="disposable">The disposable.</param>
+    public void RegisterDisposable(IDisposable disposable)
+    {
+        this._registrations.Add(disposable);
+    }
+
     /// <inheritdoc/>
     public override string ToString()
     {
@@ -172,6 +183,22 @@ public class NonPlayerCharacter : AsyncDisposable, IObservable, IRotatable, ILoc
     {
         await this.CurrentMap.RemoveAsync(this).ConfigureAwait(false);
         await base.DisposeAsyncCore().ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            foreach (var registration in this._registrations)
+            {
+                registration.Dispose();
+            }
+
+            this._registrations.Clear();
+        }
+
+        base.Dispose(disposing);
     }
 
     /// <summary>

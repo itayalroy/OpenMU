@@ -102,7 +102,7 @@ public class MapInitializer : IMapInitializer
             this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
         }
 
-        this._configurationChangeMediator?.RegisterForNew<MonsterSpawnArea, GameMap>(createdMap, async (spawnArea, map) =>
+        if (this._configurationChangeMediator?.RegisterForNew<MonsterSpawnArea, GameMap>(createdMap, async (spawnArea, map) =>
         {
             if (!Equals(spawnArea.GameMap, map.Definition))
             {
@@ -115,7 +115,10 @@ public class MapInitializer : IMapInitializer
             }
 
             this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
-        });
+        }) is { } registration)
+        {
+            createdMap.RegisterDisposable(registration);
+        }
 
         this._logger.LogDebug("Finished creating monster instances for map {createdMap}", createdMap);
     }
@@ -286,7 +289,7 @@ public class MapInitializer : IMapInitializer
             attackableNpc.RegisterDisposable(definitionRegistration);
         }
 
-        this._configurationChangeMediator?.RegisterObject(
+        if (this._configurationChangeMediator?.RegisterObject(
             spawnArea,
             spawnedObject,
             async (unregisterAction, area, o) =>
@@ -309,7 +312,6 @@ public class MapInitializer : IMapInitializer
                     if (newNpc is not null)
                     {
                         this._spawnedMonsters.AddOrUpdate(spawnArea, spawnArea.Quantity, (_, _) => spawnArea.Quantity);
-                        this.RegisterForConfigChanges(createdMap, area, newNpc);
                     }
 
                     return;
@@ -334,11 +336,14 @@ public class MapInitializer : IMapInitializer
             {
                 await o.DisposeAsync().ConfigureAwait(false);
                 this._spawnedMonsters.TryRemove(spawnArea, out var _);
-            });
+            }) is { } spawnAreaRegistration)
+        {
+            spawnedObject.RegisterDisposable(spawnAreaRegistration);
+        }
 
         if (spawnedObject.Definition.MerchantStore is { } merchantStore)
         {
-            this._configurationChangeMediator?.RegisterObject(merchantStore, spawnedObject, async (_, itemStorage, o) =>
+            if (this._configurationChangeMediator?.RegisterObject(merchantStore, spawnedObject, async (_, itemStorage, o) =>
             {
                 await o.ForEachObservingAsync<Player>(
                     async player =>
@@ -351,7 +356,10 @@ public class MapInitializer : IMapInitializer
                         }
                     },
                     false).ConfigureAwait(false);
-            });
+            }) is { } merchantRegistration)
+            {
+                spawnedObject.RegisterDisposable(merchantRegistration);
+            }
         }
     }
 

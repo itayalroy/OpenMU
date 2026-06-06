@@ -18,11 +18,13 @@ using Nito.AsyncEx;
 /// <summary>
 /// The game map which contains instances of players, npcs, drops, and more.
 /// </summary>
-public class GameMap
+public class GameMap : AsyncDisposable
 {
     private readonly IDictionary<ushort, ILocateable> _objectsInMap = new ConcurrentDictionary<ushort, ILocateable>();
 
     private readonly IAreaOfInterestManager _areaOfInterestManager;
+
+    private readonly IList<IDisposable> _registrations = new List<IDisposable>();
 
     private readonly IdGenerator _objectIdGenerator;
 
@@ -272,5 +274,43 @@ public class GameMap
         {
             await drop.DisposeAsync().ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Registers a disposable to be disposed together with this map.
+    /// </summary>
+    /// <param name="disposable">The disposable.</param>
+    internal void RegisterDisposable(IDisposable disposable)
+    {
+        this._registrations.Add(disposable);
+    }
+
+    /// <inheritdoc />
+    protected override async ValueTask DisposeAsyncCore()
+    {
+        foreach (var registration in this._registrations)
+        {
+            registration.Dispose();
+        }
+
+        this._registrations.Clear();
+
+        foreach (var obj in this._objectsInMap.Values.Where(obj => obj is not Player).ToList())
+        {
+            await this.RemoveAsync(obj).ConfigureAwait(false);
+            switch (obj)
+            {
+                case IAsyncDisposable asyncDisposable:
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    break;
+                case IDisposable disposable:
+                    disposable.Dispose();
+                    break;
+            }
+        }
+
+        this.ObjectAdded = null;
+        this.ObjectRemoved = null;
+        await base.DisposeAsyncCore().ConfigureAwait(false);
     }
 }
